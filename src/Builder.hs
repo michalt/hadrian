@@ -14,7 +14,8 @@ import Stage
 -- * Extracting source dependencies, e.g. by passing @-M@ command line argument;
 -- * Linking object files & static libraries into an executable.
 -- We have CcMode for C compiler and GhcMode for GHC.
-data CcMode  = CompileC  | FindCDependencies deriving (Eq, Generic, Show)
+data CcMode  = CompileC  | FindCDependencies | FindCDependenciesOfHs
+    deriving (Eq, Generic, Show)
 data GhcMode = CompileHs | FindHsDependencies | LinkHs
     deriving (Eq, Generic, Show)
 

@@ -11,6 +11,8 @@ import Settings.Path
 import Target
 import Util
 
+import Debug.Trace
+
 compilePackage :: [(Resource, Int)] -> Context -> Rules ()
 compilePackage rs context@Context {..} = do
     let path            = buildPath context
@@ -18,11 +20,17 @@ compilePackage rs context@Context {..} = do
         compile compiler obj2src obj = do
             let src = obj2src context obj
             need [src]
-            needDependencies context src $ obj <.> "d"
+            needDependencies FindCDependencies context src $ obj <.> "d"
             build $ Target context (compiler stage) [src] [obj]
         compileHs = \[obj, _hi] -> do
             (src, deps) <- fileDependencies context obj
             need $ src : deps
+            trace src $ return ()
+            -- FIXME: Only try to run `needDependencies` for things under
+            -- `compiler/`
+            if "compiler" `isPrefixOf` src
+              then needDependencies FindCDependenciesOfHs context src $ obj <.> "dhs"
+              else return ()
             when (isLibrary package) $ need =<< return <$> pkgConfFile context
             needContext =<< contextDependencies context
             buildWithResources rs $ Target context (Ghc CompileHs stage) [src] [obj]
@@ -36,41 +44,6 @@ compilePackage rs context@Context {..} = do
     [ path <//> "*" <.> suf way | suf <- [    osuf,     hisuf] ] &%> compileHs
     [ path <//> "*" <.> suf way | suf <- [obootsuf, hibootsuf] ] &%> compileHs
 
--- | Discover dependencies of a given source file by iteratively calling @gcc@
--- in the @-MM -MG@ mode and building generated dependencies if they are missing
--- until reaching a fixed point.
-needDependencies :: Context -> FilePath -> FilePath -> Action ()
-needDependencies context@Context {..} src depFile = discover
-  where
-    discover = do
-        build $ Target context (Cc FindCDependencies stage) [src] [depFile]
-        deps <- parseFile depFile
-        -- Generated dependencies, if not yet built, will not be found and hence
-        -- will be referred to simply by their file names.
-        let notFound = filter (\file -> file == takeFileName file) deps
-        -- We find the full paths to generated dependencies, so we can request
-        -- to build them by calling 'need'.
-        todo <- catMaybes <$> mapM (fullPathIfGenerated context) notFound
-
-        if null todo
-        then need deps -- The list of dependencies is final, need all
-        else do
-            need todo  -- Build newly discovered generated dependencies
-            discover   -- Continue the discovery process
-
-    parseFile :: FilePath -> Action [String]
-    parseFile file = do
-        input <- liftIO $ readFile file
-        case parseMakefile input of
-            [(_file, deps)] -> return deps
-            _               -> return []
-
--- | Find a given 'FilePath' in the list of generated files in the given
--- 'Context' and return its full path.
-fullPathIfGenerated :: Context -> FilePath -> Action (Maybe FilePath)
-fullPathIfGenerated context file = interpretInContext context $ do
-    generated <- generatedDependencies
-    return $ find ((== file) . takeFileName) generated
 
 obj2src :: String -> (FilePath -> Bool) -> Context -> FilePath -> FilePath
 obj2src extension isGenerated context@Context {..} obj

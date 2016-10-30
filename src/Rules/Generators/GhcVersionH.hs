@@ -33,3 +33,4 @@ generateGhcVersionH = do
         , "          && (pl2) <= __GLASGOW_HASKELL_PATCHLEVEL2__ )"
         , ""
         , "#endif /* __GHCVERSION_H__ */" ]
+
